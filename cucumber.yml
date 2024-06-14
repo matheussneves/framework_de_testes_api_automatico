@@ -1,0 +1,28 @@
+# Template
+default: -p html_report -p json_report -p hk --publish-quiet
+parallel: -p parallel_logs -p parallel_html_report -p parallel_json_report --publish-quiet
+rerun: -p rerun_html_report -p rerun_json_report --publish-quiet
+local: -p excon_log -p default LOCAL=true
+mock: MOCK=true
+generic_mock: GENERIC_MOCK=true -p mock
+
+# Reports
+html_report: --format pretty --format html --out=reports/features_report.html
+json_report: --format pretty --format json --out=reports/features_report.json
+parallel_html_report: --format pretty --format html --out reports/parallel/<%= ENV['EXEC_TYPE'] %>/report_<%= ENV['TEST_ENV_NUMBER'] %>.html
+parallel_json_report: --format pretty --format json --out reports/parallel/<%= ENV['EXEC_TYPE'] %>/report_<%= ENV['TEST_ENV_NUMBER'] %>.json
+rerun_html_report: --format pretty --format html --out reports/parallel/<%= ENV['EXEC_TYPE'] %>/rerun_<%= ENV['TEST_ENV_NUMBER'] %>.html
+rerun_json_report: --format pretty --format json --out reports/parallel/<%= ENV['EXEC_TYPE'] %>/rerun_<%= ENV['TEST_ENV_NUMBER'] %>.json
+dry_run_report: -q -r env.rb --dry-run --format json --out=reports/features_report.json
+
+# Logs
+excon_log: EXCON_LOG=true
+parallel_logs: --no-color --out logs/execution_log_<%= ENV['TEST_ENV_NUMBER'] %>.log
+
+# Retry
+no_retry: NO_RETRY=true
+
+# Environments
+dev: ENVIRONMENT_TYPE=dev
+hk: ENVIRONMENT_TYPE=hk
+prd: ENVIRONMENT_TYPE=prd

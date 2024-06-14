@@ -1,0 +1,6 @@
+/screenshots/
+*.json
+*.html
+*.retry
+debug.log
+list_of_services.txt
