@@ -21,21 +21,20 @@ task :clean_reports_folders do
 end
 
 desc 'RUN TESTS (Utilizado pelo executor dinâmico)'
-task :run_tests, %i[env type tags profiles] do |task, args|
-  args.with_defaults(processes: DEFAULT_PROCESSES)
+task :run_tests, %i[env type tags profiles] do |task, args| # type = 'api', 'flaky', 'failed'
+  args.with_defaults(processes: DEFAULT_PROCESSES) 
   run_tests(task, args)
 end
 
 desc 'Gerador automático dos cenários'
-task :automation_generator, %i[api_name endpoint] do |_task, args|
+task :automation_generator, %i[api_name endpoint url] do |_task, args|
   require_relative 'automation_generator/automation_generator'
-  AutomationGenerator.run_automation_generator(args[:api_name], args[:endpoint])
+  AutomationGenerator.run_automation_generator(args[:url], args[:api_name], args[:endpoint])
 end
 
 def run_commands(task, args = nil)
   ENV['JOB'] = task.to_s
   ENV['EXEC_TYPE'] = type = args[:type]
-
   infos = split_infos(task)
   env = args[:env] || infos[:env]
   profiles = "#{args[:optional_param]} #{args[:default_param]} -p #{env} #{type_profiles(type)}"
@@ -105,7 +104,7 @@ end
 
 
 def run_tests(task, args)
-  load_profiles_from_TDM
+  
   ENV['JOB'] = task.to_s
   ENV['EXEC_TYPE'] = args[:type]
 

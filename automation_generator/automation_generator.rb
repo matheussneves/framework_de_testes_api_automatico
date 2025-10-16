@@ -1,11 +1,14 @@
 require_relative 'config/env'
+require 'net/http'
+require 'json'
+require 'yaml'
 
 module AutomationGenerator
   class << self
     include CommonsTemplate
 
-    def run_automation_generator(api_name, endpoint)
-      doc = download_swagger_doc(api_name)
+    def run_automation_generator(url, api_name, endpoint)
+      doc = download_swagger_doc(api_name, url)
 
       unless endpoint.eql?('all') || doc['paths'].key?(endpoint)
         puts "O endpoint '#{endpoint}' não foi encontrado na API '#{api_name}'"
@@ -113,12 +116,16 @@ module AutomationGenerator
       end
     end
 
-    def download_swagger_doc(api_name)
+    def download_swagger_doc(api_name, url)
       folder = 'automation_generator/documentations'
       FileUtils.mkdir_p(folder)
       path = "#{folder}/#{api_name.gsub('/', ' ')}@#{Time.now.strftime('%d_%m_%Y_%H_%M_%S')}.yaml"
 
-      documentation = Excon.get("https://raw.githubusercontent.com/matheussneves/exemplo_teste_ruby/main/swagger.yaml").body
+     
+
+      uri = URI.parse(url)
+      response = Net::HTTP.get(uri)
+      documentation = YAML.dump(JSON.parse(response))
 
       File.open(path, 'a') do |file|
         file.write(documentation)

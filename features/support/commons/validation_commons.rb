@@ -36,10 +36,11 @@ module ApiCommons
   end
 
   def validate_call_endpoint_steps_arguments(endpoint, type, ignore_steps, data_table)
+
     validade_endpoint_consistency(endpoint)
     unless ignore_steps.empty?
-      raise 'Step type must be an Array' unless ignore_steps.is_a? Array
-      raise 'Step type not expected. Use: \'Dado\', \'Quando\' and \'Então\'' unless ignore_steps.grep(/Dado|Quando|Então/).any?
+      raise 'O tipo do passo deve ser um Array'unless ignore_steps.is_a? Array
+      raise 'Tipo de passo não esperado. Use: \'Dado\', \'Quando\' e \'Então\''unless ignore_steps.grep(/Dado|Quando|Então/).any?
     end
     validate_datatable_argument(data_table)
     raise 'Endpoint name not expected' if (/.*_.*\..*/ =~ endpoint).nil?

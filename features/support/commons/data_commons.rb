@@ -120,7 +120,7 @@ module ApiCommons
     path_without_sandbox = path.split('/').reject { |folder| folder.start_with?('sandbox') }.join('/')
     
     project_name = path_without_sandbox.split('/').grep(/^testes-/).last.gsub('testes-', '').gsub('-', '_').upcase
-    binding.pry
+
     return { env: API_ENV_DATA_NEW } if project_name.eql?('API')
 
     { env: binding.eval("#{project_name}_ENV_DATA"), standard: binding.eval("#{project_name}_STANDARD_DATA") } # { env: STORE_ENV_DATA, standard: STORE_STANDARD_DATA }

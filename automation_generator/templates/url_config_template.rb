@@ -15,9 +15,10 @@ module Templates
 
       schema = data.doc['schemes'] || 'https'
       schema = schema.first if schema.is_a?(Array)
-      value = data.doc['host'] ? "#{schema}://#{data.doc['host']}" : 'TODO: url'
-      file_content['urls'] = Hash.new if file_content['urls'].eql?(nil)
-      file_content['urls'][data.api_name] = value
+    
+       value =  "Endereco IP" #data.doc['servers']["url"] ? data.doc['servers']["url"] : 'TODO: url'
+       file_content['urls'] = Hash.new if file_content['urls'].eql?(nil)
+       file_content['urls'][data.api_name] = value
       
     end
 

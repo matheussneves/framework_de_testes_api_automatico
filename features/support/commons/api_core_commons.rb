@@ -51,7 +51,9 @@ module ApiCommons
     body = normalize_body(params)
 
     hash = body_to_hash(body)
-
+    if params.body && params.body.is_a?(OpenStruct)
+      return JSON.generate(deep_to_h(params.body))
+    end
     consumes = params.consumes.to_s
     if consumes.include?('application/x-www-form-urlencoded')
       URI.encode_www_form(hash)
@@ -61,6 +63,27 @@ module ApiCommons
       hash.to_json
     end
   end
+
+def deep_to_h(obj)
+  if obj.is_a?(OpenStruct)
+    obj.to_h.transform_values { |v| deep_to_h(v) }
+  elsif obj.is_a?(Array)
+    obj.map { |v| deep_to_h(v) }
+  else
+    obj
+  end
+end
+
+def deep_stringify_keys(obj)
+  case obj
+  when Hash
+    obj.each_with_object({}) { |(k, v), h| h[k.to_s] = deep_stringify_keys(v) }
+  when Array
+    obj.map { |v| deep_stringify_keys(v) }
+  else
+    obj
+  end
+end
 
   def normalize_body(params)
     if params.body

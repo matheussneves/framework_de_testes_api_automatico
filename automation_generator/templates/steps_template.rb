@@ -53,8 +53,8 @@ module Templates
       %(Dado('ter uma massa configurada do endpoint #{endpoint}.#{method} para o cenário {tipo}') do |tipo|
   # Popular os parametros
   #{main_var} = OpenStruct.new
-  #{main_var}.consumes = #{get_consumes_or_produces(path, 'consumes')}
-  #{main_var}.produces = #{get_consumes_or_produces(path, 'produces')}
+  #{main_var}.consumes = 'application/json'
+  #{main_var}.produces = 'application/json'
   #{build_all_params(main_var)}
   if tipo.eql?('negativo')
     # Criar logica para o cenario negativo
@@ -125,273 +125,140 @@ end
 end#{"\n" unless file_content.empty?}\n)
     end
 
+    # OpenAPI 3.0: header, cookie, path, query, body/requestBody
     def build_all_params(main_var)
       var = "#{main_var}."
-      "#{build_params(var, 'header')}#{build_params(var, 'formData')}#{build_params(var, 'body')}#{verify_base_path(var, build_params(var, 'path'))}#{build_params(var, 'query')}"
+      "#{build_params(var, 'header')}#{build_params(var, 'cookie')}#{build_params(var, 'path')}#{build_params(var, 'query')}#{build_request_body(var)}"
     end
 
     def build_params(variable, in_type)
       path = data.doc['paths'][data.endpoint][method]
-      parameters = path['parameters']
+      parameters = path['parameters'] || []
 
-      return nil if (parameters.nil? || parameters.none? { |item| item['in'].eql?(in_type) }) && !multipart_header?(path['consumes'], in_type)
+      return nil if parameters.none? { |item| item['in'].eql?(in_type) }
 
       in_type_snake_case = snake_case(in_type)
-      consumes = path['consumes']
 
       content = "\n  #{variable}#{in_type_snake_case} = OpenStruct.new\n"
-      content << build_header_content_type(variable, in_type_snake_case, consumes, in_type)
 
       parameters.each do |item|
-        next if item['in'] != in_type
+        next unless item['in'] == in_type
 
         build_line(content, item, variable, in_type)
       end
       content
     end
 
-    def verify_base_path(variable, path_params)
-      vars = data.doc['basePath'].scan(/\{(\S+)\}/).flatten
+    def build_request_body(variable)
+      path = data.doc['paths'][data.endpoint][method]
+      request_body = path['requestBody']
+      return '' unless request_body
 
-      path_params ||= "\n  #{variable}path = OpenStruct.new\n"
-      vars.each { |var| path_params << "  #{variable}path['#{var}'] = nil\n" }
-      path_params
-    end
+      content = "\n  #{variable}body = OpenStruct.new\n"
+      content_types = request_body['content']&.keys || []
+      content << "  #{variable}body['Content-Type'] = '#{content_types.first}'\n" unless content_types.empty?
 
-    def multipart_header?(consumes, in_type)
-      consumes && consumes.first.eql?('multipart/form-data') && in_type.eql?('header')
-    end
-
-    def build_header_content_type(variable, in_type_snake_case, consumes, in_type)
-      content = ''
-      content << "  #{variable}#{in_type_snake_case}['Content-Type'] = %(#{consumes.first})\n" if consumes && in_type.eql?('header')
+      schema = request_body['content']&.values&.first&.dig('schema')
+      if schema
+        build_schema_model(content, "#{variable}body", schema)
+      end
       content
     end
 
     def build_line(content, item, var, in_type)
       variable = "  #{var}#{snake_case(in_type)}['#{item['name']}']"
       if item['schema']
-        model = get_model(item)
-
-        if item['schema']['type'].eql?('array') then build_array_model(content, [item['name'], item['schema']], "  #{var}#{snake_case(in_type)}")
-        elsif model['type'].eql?('array') then build_array_model(content, [item['name'], model], "  #{var}#{snake_case(in_type)}")
-        elsif model['allOf']
-          content << "\n#{variable} = OpenStruct.new\n"
-          build_composition_model(content, variable, model)
-        else
-          content << "\n#{variable} = OpenStruct.new\n"
-          build_model(content, variable, model['properties'] || model['additionalProperties'])
-        end
+        build_schema_model(content, variable, item['schema'])
       else
         content << build_example_content(variable, item)
       end
     end
 
+    def build_schema_model(content, variable, schema)
+      if schema['$ref']
+        model = get_schema_ref(schema['$ref'])
+        build_schema_model(content, variable, model)
+      elsif schema['type'] == 'object'
+        content << "\n#{variable} = OpenStruct.new\n"
+        (schema['properties'] || {}).each do |prop, prop_schema|
+          build_schema_model(content, "#{variable}['#{prop}']", prop_schema)
+        end
+      elsif schema['type'] == 'array'
+        item_var = "#{variable}_item"
+        content << "#{item_var} = OpenStruct.new\n"
+        build_schema_model(content, item_var, schema['items'])
+        content << "#{variable} = [#{item_var}]\n"
+      else
+        value = schema['example'] || schema['default'] || schema['type']
+        content << "#{variable} = #{value.is_a?(String) ? "'#{value}'" : value}\n"
+      end
+    end
+
+    def get_schema_ref(ref)
+      ref_path = ref.gsub('#/components/schemas/', '')
+      data.doc['components']['schemas'][ref_path]
+    end
+
     def build_example_content(variable, item)
-      "#{variable} = '#{item['example'] || item['x-example'] || item['type']}'\n"
-    end
-
-    def build_model(content, var, model)
-      comment_swagger_error(var, content, 'model') unless model
-
-      model.each do |item|
-        variable = "#{var}['#{item.first}']"
-        if item.last['$ref']
-          content << "\n#{variable} = OpenStruct.new\n"
-          sub_model = get_sub_model(item)
-          sub_model['type'].eql?('string') ? set_variable_example(content, variable, sub_model) : build_model(content, variable, sub_model['properties'])
-        elsif item.last['properties']
-          content << "\n#{variable} = OpenStruct.new\n"
-          build_model(content, variable, item.last['properties'])
-        elsif item.last['type'].eql?('array') then build_array_model(content, item, variable)
-        else
-          set_variable_example(content, variable, item)
-        end
-      end
-    end
-
-    def build_array_model(content, item, variable)
-      items = item.last['items']
-
-      item_object = "  #{item.first}_item"
-      content << "#{item_object} = OpenStruct.new\n" unless items['type'].eql?('string')
-
-      if items['$ref']
-        sub_model = get_sub_model(item)
-        build_model(content, item_object, sub_model['properties'])
-      elsif items['allOf'] || items['type'].eql?('object') then build_object_model(content, item_object, items)
-      else
-        set_variable_example(content, item_object, item)
-      end
-
-      set_array_variable_example(content, items, item, variable)
-    end
-
-    def build_object_model(content, var, model)
-      content << "\n#{var} = OpenStruct.new\n" unless content.include?("#{var.strip} = OpenStruct.new")
-      if model['allOf'] then build_composition_model(content, var, model)
-      elsif model['type'].eql?('object') then build_model(content, var, model['properties'])
-      else
-        comment_swagger_error(model, content, 'object')
-      end
-      content << "#{var} = [#{var.strip}]\n"
-    end
-
-    def build_composition_model(content, var, model)
-      model['allOf'].each do |item|
-        if item['$ref']
-          sub_model = get_sub_model(item)
-          build_model(content, var, sub_model['properties'])
-        elsif item['type'].eql?('object') then build_model(content, var, item['properties'])
-        end
-      end
-    end
-
-    def get_model(item)
-      key = item['schema']['items'] ? item['schema']['items']['$ref'] : item['schema']['$ref']
-      model = data.doc['definitions'][remove_prefix(key)]
-      model = data.doc['definitions'][remove_prefix(model['$ref'])] if model['$ref']
-      model
-    end
-
-    def get_sub_model(item)
-      if item.instance_of?(Hash) && item['$ref'] then get_ref_definition(item['$ref'])
-      elsif item.last['items'] then get_ref_definition(item.last['items']['$ref'])
-      else
-        get_ref_definition(item.last['$ref'])
-      end
-    end
-
-    def get_ref_definition(ref)
-      data.doc['definitions'][remove_prefix(ref)]
-    end
-
-    def remove_prefix(ref)
-      item = ref.gsub('#/definitions/', '')
-      /\A\d+\z/.match(item).nil? ? item : item.to_i
-    end
-
-    def get_example(item)
-      item.is_a?(Array) ? item.last['example'] || item.last['x-example'] || item.last['type'] : item['example'] || item['x-example'] || item['type']
-    end
-
-    def set_variable_example(content, variable, item)
-      value = get_example(item)
-      content << "#{variable} = #{value.is_a?(String) ? "'#{value}'" : value}\n"
-    end
-
-    def set_array_variable_example(content, items, item, variable)
-      content << if items['type'] != 'string' then content.include?(" = [#{item.first}_item]") ? "#{variable} = #{item.first}_item\n" : "#{variable} = [#{item.first}_item]\n"
-                 elsif get_example(item).is_a?(Array) then "#{variable} = #{item.first}_item\n"
-                 else
-                   "#{variable} = [#{item.first}_item]\n"
-                 end
+      value = item['example'] || item['default'] || item['type']
+      "#{variable} = #{value.is_a?(String) ? "'#{value}'" : value}\n"
     end
 
     def build_response(var, success: true)
-      responses = data.doc['paths'][data.endpoint][method]['responses']
+      responses = data.doc['paths'][data.endpoint][method]['responses'] rescue nil
 
       content = ''
+      return content unless responses.is_a?(Hash) && !responses.empty?
+
       responses.each_pair do |code, properties|
-        unless properties['schema']
-          puts "WARNING: structure '#{properties}' does not have schema..."
-          next
-        end
+        next unless properties.is_a?(Hash) && properties['content']
+
+        schema = properties['content'].values.first['schema'] rescue nil
+        next unless schema
 
         if (success && code.to_i.between?(200, 299)) || (!success && code.to_i.between?(400, 599))
-          walk_model(properties, content, var)
+          walk_schema(schema, content, var)
           break
         end
       end
       content
     end
 
-    def walk_model(item, content, var)
-      if item['schema']['$ref']
-        model = get_model(item)
-
-        if model['type'].eql?('array') then build_response_array_model(content, ['resp', model], "#{var}.first")
-        elsif model['allOf'] then build_response_composition_model(content, var, model)
-        else
-          build_response_model(content, var, model['properties'])
+    def walk_schema(schema, content, var)
+      if schema['$ref']
+        model = get_schema_ref(schema['$ref'])
+        walk_schema(model, content, var)
+      elsif schema['type'] == 'object'
+        (schema['properties'] || {}).each do |prop, prop_schema|
+          walk_schema_property(content, "#{var}['#{prop}']", prop_schema)
         end
-      elsif item['schema']['type'].eql?('array') then build_response_array_model(content, ['resp', item['schema']], "#{var}.first")
-      else
-        build_response_model(content, var, item['schema']['properties'])
+      elsif schema['type'] == 'array'
+        item_var = "#{var}.first"
+        walk_schema(schema['items'], content, item_var)
       end
     end
 
-    def build_response_model(content, var, model)
-      return unless model
-
-      model.each do |item|
-        if item.last['$ref'] then build_response_ref_model(content, var, item)
-        elsif item.last['properties'] then build_response_model(content, "#{var}['#{item.first}']", item.last['properties'])
-        elsif item.last['type'].eql?('array') then build_response_array_model(content, item, "#{var}['#{item.first}'].first")
-        else
-          value = get_example(item)
-          content << "      expect(#{var}['#{item.first}']).to eql(#{value.is_a?(String) ? "'#{value}'" : value})\n"
+    def walk_schema_property(content, variable, schema)
+      if schema['$ref']
+        model = get_schema_ref(schema['$ref'])
+        walk_schema(model, content, variable)
+      elsif schema['type'] == 'object'
+        (schema['properties'] || {}).each do |prop, prop_schema|
+          walk_schema_property(content, "#{variable}['#{prop}']", prop_schema)
         end
-      end
-    end
-
-    def build_response_composition_model(content, var, model)
-      model['allOf'].each do |item|
-        if item['$ref']
-          sub_model = get_sub_model(item)
-          build_response_model(content, var, sub_model['properties'])
-        else
-          build_response_model(content, var, item['properties'])
-        end
-      end
-    end
-
-    def build_response_ref_model(content, var, item)
-      sub_model = get_sub_model(item)
-
-      if sub_model['type'].eql?('array') then build_response_array_model(content, [item.first, sub_model], "#{var}['#{item.first}'].first")
-      elsif sub_model['properties'] then build_response_model(content, "#{var}['#{item.first}']", sub_model['properties'])
+      elsif schema['type'] == 'array'
+        item_var = "#{variable}.first"
+        walk_schema(schema['items'], content, item_var)
       else
-        value = get_example(sub_model)
-        content << "      expect(#{var}['#{item.first}']).to eql(#{value.is_a?(String) ? "'#{value}'" : value})\n"
+        value = schema['example'] || schema['default'] || schema['type']
+        content << "      expect(#{variable}).to eql(#{value.is_a?(String) ? "'#{value}'" : value})\n"
       end
-    end
-
-    def build_response_array_model(content, item, var)
-      items = item.last['items']
-
-      if items['$ref'] then build_response_sub_model(content, var, item)
-      elsif items['type'].eql?('object') then build_response_model(content, var, items['properties'])
-      elsif items['allOf'] then build_response_composition_model(content, var, items)
-      else
-        return content << "      expect(#{var}).to eql(#{get_array_example(item)}.first)\n" if item.last['example'] || item.last['x-example']
-
-        content << "      expect(#{var}['#{item.first}']).to eql(#{get_array_example(item)})\n"
-      end
-    end
-
-    def build_response_sub_model(content, var, item)
-      model = get_sub_model(item)
-      if model['allOf'] then build_response_composition_model(content, var, model)
-      elsif model['properties'] then build_response_model(content, var, model['properties'])
-      else
-        comment_swagger_error(item, content, 'nested_object')
-      end
-    end
-
-    def get_array_example(item)
-      example = item.last['items']['example'] || item.last['items']['x-example'] || item.last['example'] || item.last['x-example'] || item.last['items']['type']
-      Array(example)
-    end
-
-    def get_consumes_or_produces(path, type)
-      value = path[type] || data.doc[type] || 'nil'
-
-      value.is_a?(Array) ? %('#{value.first}') : value.to_s.tr('"', '\'')
     end
 
     def last_error_code
-      data.doc['paths'][data.endpoint][method]['responses'].keys.last
+      responses = data.doc['paths'][data.endpoint][method]['responses'] rescue nil
+      return 'unknown_error' if responses.nil? || !responses.respond_to?(:keys) || responses.empty?
+      responses.keys.last
     end
   end
 end

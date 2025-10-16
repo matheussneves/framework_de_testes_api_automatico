@@ -32,7 +32,7 @@ module Templates
     private
 
     def build_def(data)
-      splited_path = data.path.split('/')
+      splited_path = data.path.split('/').map { |segment| segment.tr('.', '_') }
       splited_path.shift
       splited_path = normalize_path(splited_path)
 

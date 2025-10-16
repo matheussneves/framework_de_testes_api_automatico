@@ -8,7 +8,7 @@ module Templates
       self.file_path = file_path
       self.file_name = file_name
 
-      splited_path = data.path.split('/')
+      splited_path = data.path.split('/').map { |segment| segment.tr('.', '_') }
       splited_path.shift
       splited_path = normalize_path(splited_path)
       self.endpoint = splited_path.join('_')
@@ -38,8 +38,6 @@ module Templates
       %(# language:pt
 
 @#{encode_hyphen(data.system)}
-@id_epico_jira???
-@id_estoria_jira???
 @#{endpoint}
 Funcionalidade: #{get_feature_name(data)}
   Como uma aplicação de APIs
@@ -59,9 +57,6 @@ Funcionalidade: #{get_feature_name(data)}
 
       %(
   @#nome_responsavel???
-  @id_epico_jira???
-  @id_estoria_jira???
-  @id_task_jira???
   @#{endpoint}.#{method}
   Esquema do Cenário: Validar o endpoint #{endpoint}.#{method}
     Dado ter uma massa configurada do endpoint #{endpoint}.#{method} para o cenário <tipo>

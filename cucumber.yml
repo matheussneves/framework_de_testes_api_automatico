@@ -1,5 +1,5 @@
 # Template
-default: -p html_report -p json_report -p hk --publish-quiet
+default: -p html_report -p json_report -p cdev3 --publish-quiet
 parallel: -p parallel_logs -p parallel_html_report -p parallel_json_report --publish-quiet
 rerun: -p rerun_html_report -p rerun_json_report --publish-quiet
 local: -p excon_log -p default LOCAL=true
@@ -23,6 +23,8 @@ parallel_logs: --no-color --out logs/execution_log_<%= ENV['TEST_ENV_NUMBER'] %>
 no_retry: NO_RETRY=true
 
 # Environments
-dev: ENVIRONMENT_TYPE=dev
-hk: ENVIRONMENT_TYPE=hk
-prd: ENVIRONMENT_TYPE=prd
+
+development: ENVIRONMENT_TYPE=development 
+staging: ENVIRONMENT_TYPE=staging
+production: ENVIRONMENT_TYPE=production
+
